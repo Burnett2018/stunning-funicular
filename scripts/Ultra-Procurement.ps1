@@ -306,9 +306,16 @@ function Register-Input([string]$Role, [string]$Path, [int]$Rows) {
 
 function Get-HospitalName([string]$Kitchen) {
     $k = ConvertTo-Key $Kitchen
-    if ($k -match 'lemesos|limassol|λεμεσ|gnl') { return 'Limassol General Hospital' }
-    if ($k -match 'troodos|τροοδ|gnt') { return 'Troodos Hospital' }
+    if ($k -match 'lemesos|limassol|λεμεσ|gnl') { return 'Γενικό Νοσοκομείο Λεμεσού' }
+    if ($k -match 'troodos|τροοδ|gnt') { return 'Νοσοκομείο Τροόδους' }
     return $null
+}
+
+function Get-KitchenLabel([string]$Kitchen) {
+    $k = ConvertTo-Key $Kitchen
+    if ($k -match 'lemesos|limassol|λεμεσ|gnl') { return 'Λεμεσός' }
+    if ($k -match 'troodos|τροοδ|gnt') { return 'Τρόοδος' }
+    return $Kitchen
 }
 
 # ---------------------------------------------------------------------------
@@ -387,7 +394,13 @@ function Write-DocxFromTemplate([string]$Template, [string]$OutFile, [hashtable]
                 foreach ($k in $Blocks.Keys) {
                     $pattern = '<w:p\b(?:(?!</w:p>).)*?\{\{' + [regex]::Escape($k) + '\}\}(?:(?!</w:p>).)*?</w:p>'
                     $m = [regex]::Match($xml, $pattern, [System.Text.RegularExpressions.RegexOptions]::Singleline)
-                    if ($m.Success) { $xml = $xml.Substring(0, $m.Index) + $Blocks[$k] + $xml.Substring($m.Index + $m.Length); $found[$k] = $true }
+                    if ($m.Success) {
+                        # A label on the same line as the placeholder (e.g. "Label: {{x}}") is kept; the content follows it.
+                        $ph = '{{' + $k + '}}'
+                        $label = ([regex]::Replace($m.Value, '<[^>]+>', '')).Replace($ph, '').Trim()
+                        $replacement = if ($label) { $m.Value.Replace($ph, '') + $Blocks[$k] } else { $Blocks[$k] }
+                        $xml = $xml.Substring(0, $m.Index) + $replacement + $xml.Substring($m.Index + $m.Length); $found[$k] = $true
+                    }
                 }
                 foreach ($k in $Inline.Keys) {
                     $ph = '{{' + $k + '}}'
@@ -671,15 +684,15 @@ try {
         $lineTotal = Round-Money ($qty * $best.UnitPrice)
         $s = $Suppliers[$best.SupplierKey]
         if ($offers.Count -eq 1) {
-            $why = "only valid offer, from $($s.Name), at $(Format-Price $best.UnitPrice)"
+            $why = "μοναδική έγκυρη προσφορά, από $($s.Name), στα $(Format-Price $best.UnitPrice)"
         } elseif ($ties.Count -gt 1) {
-            $why = "lowest price $(Format-Price $best.UnitPrice) offered by $($ties.Count) suppliers (" +
-                (($ties | ForEach-Object { $Suppliers[$_.SupplierKey].Id }) -join ', ') + "); $($s.Id) selected by lowest supplier code. Confirm manually."
-            Add-Issue "Item $($item.Code): price tie between $(($ties | ForEach-Object { $Suppliers[$_.SupplierKey].Id }) -join ', '); selected $($s.Id) by lowest supplier code." -Warning
+            $tieIds = ($ties | ForEach-Object { $Suppliers[$_.SupplierKey].Id }) -join ', '
+            $why = "χαμηλότερη τιμή $(Format-Price $best.UnitPrice) από $($ties.Count) προμηθευτές ($tieIds)· επιλέχθηκε ο $($s.Id) με βάση τον μικρότερο κωδικό. Απαιτείται χειροκίνητη επιβεβαίωση"
+            Add-Issue "Item $($item.Code): price tie between $tieIds; selected $($s.Id) by lowest supplier code." -Warning
         } else {
             $next = $offers[1]
             $pct = (($next.UnitPrice - $best.UnitPrice) / $best.UnitPrice * 100).ToString('0.0', $Inv)
-            $why = "lowest of $($offers.Count) valid offers at $(Format-Price $best.UnitPrice); next lowest $($Suppliers[$next.SupplierKey].Name) at $(Format-Price $next.UnitPrice) (+$pct%)"
+            $why = "χαμηλότερη από $($offers.Count) έγκυρες προσφορές, στα $(Format-Price $best.UnitPrice)· επόμενη χαμηλότερη: $($Suppliers[$next.SupplierKey].Name) στα $(Format-Price $next.UnitPrice) (+$pct%)"
         }
         $Matrix.Add([ordered]@{
             ItemKey = $iKey; Code = $item.Code; Description = $item.Description; Unit = $item.Unit; Quantity = $qty
@@ -716,20 +729,28 @@ try {
     foreach ($sKey in @($Selected.Keys)) { $n++; $Selected[$sKey].OrderNo = "$RequestId-O$n"; $Selected[$sKey].AcceptNo = "$RequestId-A$n" }
     $W = 9026  # usable A4 width in twentieths of a point (1" margins)
 
-    # Items ordered
+    # Document text is Greek; the JSON summary and log stay in English.
+    $LawEl  = 'Ν. 73(Ι)/2016, όπως τροποποιήθηκε από τον Ν. 113(Ι)/2025'
+    $AuthEl = 'Το Τμήμα Αγορών και Προμηθειών του Γενικού Νοσοκομείου Λεμεσού και του Νοσοκομείου Τροόδους'
+    $ArtEl  = if ($isA) { '90(1)(α)' } else { '90(1)(β)' }
+    $ProcEl = if ($isA) { 'Απλή αποδοχή προσφοράς' } else { 'Συνοπτική διαδικασία ανάθεσης' }
+    function Get-SplitText($Split) { return (($Split.Keys | ForEach-Object { "$(Get-KitchenLabel $_): $(Format-Qty $Split[$_])" }) -join '; ') }
+    function Get-ItemCount([int]$Count) { if ($Count -eq 1) { return '1 είδος' } return "$Count είδη" }
+    function Get-VatText($Supplier) { if ($Supplier.Vat) { return " (Αρ. ΦΠΑ $($Supplier.Vat))" } return '' }
+
+    # 2. Items table
     $rows = New-Object System.Collections.Generic.List[object]
     foreach ($m in $Matrix) {
-        $split = ($m.Split.Keys | ForEach-Object { "${_}: $(Format-Qty $m.Split[$_])" }) -join '; '
-        $rows.Add(@($m.Code, $m.Description, [string]$m.Unit, (Format-Qty $m.Quantity), $split, $Suppliers[$m.SupplierKey].Id))
+        $rows.Add(@($m.Code, $m.Description, [string]$m.Unit, (Format-Qty $m.Quantity), (Get-SplitText $m.Split), $Suppliers[$m.SupplierKey].Id))
     }
-    $itemsXml = New-WTable @('Code', 'Description', 'Unit', 'Total qty', 'Per kitchen', 'Supplier') $rows @(1000, 2700, 800, 1000, 2326, 1200) -Right @(3)
+    $itemsXml = New-WTable @('Κωδικός', 'Περιγραφή', 'Μονάδα', 'Συνολ. ποσότητα', 'Ανά κουζίνα', 'Προμηθευτής') $rows @(1000, 2500, 1000, 1100, 2226, 1200) -Right @(3)
 
-    # Price comparison matrix + justification
+    # 3. Price comparison matrix + supplier selection justification
     $supCols = @($quotingSuppliers.Keys)
     $fixed = 900 + 600 + 750 + 1100 + 1050
     $supW = [Math]::Min(1100, [Math]::Floor(($W - $fixed - 1400) / [Math]::Max(1, $supCols.Count)))
     $descW = $W - $fixed - $supW * $supCols.Count
-    $headers = @('Code', 'Description', 'Unit', 'Qty') + @($supCols | ForEach-Object { $Suppliers[$_].Id }) + @('Selected', 'Line total')
+    $headers = @('Κωδικός', 'Περιγραφή', 'Μον.', 'Ποσ.') + @($supCols | ForEach-Object { $Suppliers[$_].Id }) + @('Επιλογή', 'Σύνολο')
     $widths  = @(900, $descW, 600, 750) + @($supCols | ForEach-Object { [int]$supW }) + @(1100, 1050)
     $rows = New-Object System.Collections.Generic.List[object]
     foreach ($m in $Matrix) {
@@ -744,84 +765,98 @@ try {
         $cells += (Format-Money $m.LineTotal)
         $rows.Add($cells)
     }
-    $totalRow = @(@{ Text = 'TOTAL'; Bold = $true }) + @(1..(3 + $supCols.Count + 1) | ForEach-Object { '' }) + @(@{ Text = (Format-Money $GrandTotal); Bold = $true })
+    $totalRow = @(@{ Text = 'ΣΥΝΟΛΟ'; Bold = $true }) + @(1..(3 + $supCols.Count + 1) | ForEach-Object { '' }) + @(@{ Text = (Format-Money $GrandTotal); Bold = $true })
     $rows.Add($totalRow)
     $right = @(3) + @(0..($supCols.Count + 1) | ForEach-Object { 4 + $_ })
     $cmpXml = New-WTable $headers $rows $widths -Right $right -Size 16
-    $cmpXml += New-WPara ('Supplier codes: ' + (($supCols | ForEach-Object { "$($Suppliers[$_].Id) = $($Suppliers[$_].Name)" }) -join '; ') + '. Unit prices in EUR excluding VAT; selected offer highlighted.') -Italic -Size 18 -After 200
-    $cmpXml += New-WPara 'Supplier selection justification' -Bold -KeepNext
-    $cmpXml += New-WPara ("Method: for each item, the lowest unit price (excluding VAT) among valid offers from active suppliers registered in suppliers.xlsx, " +
-        "taken from the price lists in force on $($AsOfDate.ToString('dd/MM/yyyy', $Inv)). Equal prices are resolved by lowest supplier code and flagged for manual confirmation.")
+    $cmpXml += New-WPara ('Κωδικοί προμηθευτών: ' + (($supCols | ForEach-Object { "$($Suppliers[$_].Id) = $($Suppliers[$_].Name)" }) -join '; ') +
+        '. Τιμές μονάδας σε ευρώ χωρίς ΦΠΑ· η επιλεγμένη προσφορά επισημαίνεται.') -Italic -Size 18 -After 200
+    $cmpXml += New-WPara 'Αιτιολόγηση επιλογής προμηθευτή' -Bold -KeepNext
+    $cmpXml += New-WPara ("Μέθοδος: για κάθε είδος επιλέγεται η χαμηλότερη τιμή μονάδας (χωρίς ΦΠΑ) μεταξύ των έγκυρων προσφορών των ενεργών προμηθευτών " +
+        "του αρχείου suppliers.xlsx, βάσει των τιμοκαταλόγων που ισχύουν στις $($AsOfDate.ToString('dd/MM/yyyy', $Inv)). Σε περίπτωση ισοβαθμίας " +
+        "επιλέγεται ο προμηθευτής με τον μικρότερο κωδικό και η επιλογή επισημαίνεται για χειροκίνητη επιβεβαίωση.")
     foreach ($m in $Matrix) { $cmpXml += New-WPara @(@{ Text = "- $($m.Code) $($m.Description): "; Bold = $true }, @{ Text = $m.Justification + '.' }) -Indent 360 -After 60 }
 
-    # Legal basis and decision
-    $legalXml = New-WPara "Article $Article of $LawText - $Procedure."
-    $legalXml += New-WPara ("Article 90(1)(a): simple acceptance of offer (no award document). Article 90(1)(b): summary award procedure (formal award document).") -Size 20
-    if ($legalRefs.Count -gt 0) {
-        $legalXml += New-WPara 'Reference documents:' -Size 20 -After 40
-        foreach ($l in $legalRefs) { $legalXml += New-WPara "- $($l.file) (SHA-256 $($l.sha256.Substring(0, 16))...)" -Size 20 -Indent 360 -After 40 }
-    }
+    # Legal basis (one line, next to its label in section 1)
+    $legalBasis = "Άρθρο $ArtEl του $LawEl – $ProcEl"
+
+    # 4. Decision (with the legal reference documents)
     $decisionXml = if ($isA) {
-        New-WPara ("The total value of this request is $(Format-Money $GrandTotal) excluding VAT, which does not exceed the Article 90(1)(a) threshold of " +
-            "$(Format-Money $Threshold90a). The procurement is carried out by simple acceptance of offer under Article 90(1)(a) of $LawText. No award document is issued.")
+        New-WPara ("Η συνολική αξία του παρόντος αιτήματος ανέρχεται σε $(Format-Money $GrandTotal) χωρίς ΦΠΑ και δεν υπερβαίνει το όριο του άρθρου 90(1)(α) " +
+            "ύψους $(Format-Money $Threshold90a). Η προμήθεια διενεργείται με απλή αποδοχή προσφοράς σύμφωνα με το άρθρο 90(1)(α) του $LawEl. " +
+            "Δεν εκδίδεται έγγραφο ανάθεσης.")
     } else {
-        New-WPara ("The total value of this request is $(Format-Money $GrandTotal) excluding VAT, which exceeds the Article 90(1)(a) threshold of " +
-            "$(Format-Money $Threshold90a)$(if ($null -ne $Threshold90b) { " and does not exceed the Article 90(1)(b) ceiling of $(Format-Money $Threshold90b)" }). " +
-            "The procurement is carried out by the summary award procedure under Article 90(1)(b) of $LawText, and a formal award decision is issued below.")
+        New-WPara ("Η συνολική αξία του παρόντος αιτήματος ανέρχεται σε $(Format-Money $GrandTotal) χωρίς ΦΠΑ και υπερβαίνει το όριο του άρθρου 90(1)(α) " +
+            "ύψους $(Format-Money $Threshold90a)$(if ($null -ne $Threshold90b) { ", χωρίς να υπερβαίνει το ανώτατο όριο του άρθρου 90(1)(β) ύψους $(Format-Money $Threshold90b)" }). " +
+            "Η προμήθεια διενεργείται με συνοπτική διαδικασία ανάθεσης σύμφωνα με το άρθρο 90(1)(β) του $LawEl και εκδίδεται επίσημη απόφαση ανάθεσης (ενότητα 5).")
+    }
+    if ($legalRefs.Count -gt 0) {
+        $decisionXml += New-WPara 'Έγγραφα αναφοράς:' -Size 20 -After 40 -KeepNext
+        foreach ($l in $legalRefs) { $decisionXml += New-WPara "- $($l.file) (SHA-256 $($l.sha256.Substring(0, 16))...)" -Size 20 -Indent 360 -After 40 }
     }
 
-    # Acceptance of offer (a) or summary award decision (b)
+    # 5. Acceptance of offer (a) or summary award decision (b)
     $awardXml = ''
     if ($isA) {
         foreach ($sKey in $Selected.Keys) {
             $s = $Suppliers[$sKey]; $sel = $Selected[$sKey]
-            $awardXml += New-WPara "ACCEPTANCE OF OFFER No. $($sel.AcceptNo) - Article 90(1)(a)" -Bold -KeepNext
-            $awardXml += New-WPara ("To: $($s.Name)" + $(if ($s.Vat) { " (VAT No. $($s.Vat))" }))
-            $awardXml += New-WPara ("The $Authority accepts your offer for the $($sel.Lines.Count) item(s) listed in order $($sel.OrderNo), " +
-                "for a total of $(Format-Money $sel.Total) excluding VAT, under Article 90(1)(a) of $LawText.") -After 200
+            $awardXml += New-WPara "ΑΠΟΔΟΧΗ ΠΡΟΣΦΟΡΑΣ αρ. $($sel.AcceptNo) – Άρθρο 90(1)(α)" -Bold -KeepNext
+            $awardXml += New-WPara ("Προς: $($s.Name)" + (Get-VatText $s))
+            $awardXml += New-WPara ("$AuthEl αποδέχεται την προσφορά σας για $(if ($sel.Lines.Count -eq 1) { 'το' } else { 'τα' }) $(Get-ItemCount $sel.Lines.Count) της παραγγελίας $($sel.OrderNo) (ενότητα 6), " +
+                "συνολικής αξίας $(Format-Money $sel.Total) χωρίς ΦΠΑ, σύμφωνα με το άρθρο 90(1)(α) του $LawEl.") -After 200
         }
-        $awardXml += New-WPara 'Under Article 90(1)(a) no award document is issued; this acceptance and the final order below constitute the procurement record.' -Italic -Size 20
+        $awardXml += New-WPara ('Σύμφωνα με το άρθρο 90(1)(α) δεν εκδίδεται έγγραφο ανάθεσης· η παρούσα αποδοχή και η τελική παραγγελία ' +
+            'αποτελούν το αρχείο της προμήθειας.') -Italic -Size 20
     } else {
-        $awardXml += New-WPara "SUMMARY AWARD DECISION No. $RequestId-AW - Article 90(1)(b)" -Bold -KeepNext
-        $awardXml += New-WPara ("Having regard to Article 90(1)(b) of $LawText, the price comparison and the supplier selection justification above, " +
-            "the $Authority awards the following contract(s) under the summary award procedure:")
+        $awardXml += New-WPara "ΑΠΟΦΑΣΗ ΣΥΝΟΠΤΙΚΗΣ ΑΝΑΘΕΣΗΣ αρ. $RequestId-AW – Άρθρο 90(1)(β)" -Bold -KeepNext
+        $awardXml += New-WPara ("Έχοντας υπόψη το άρθρο 90(1)(β) του $LawEl, τον συγκριτικό πίνακα τιμών και την αιτιολόγηση επιλογής προμηθευτή " +
+            "(ενότητα 3), $($AuthEl.Substring(0,1).ToLowerInvariant() + $AuthEl.Substring(1)) αναθέτει με συνοπτική διαδικασία τις ακόλουθες συμβάσεις:")
         foreach ($sKey in $Selected.Keys) {
             $s = $Suppliers[$sKey]; $sel = $Selected[$sKey]
-            $awardXml += New-WPara ("- $($s.Name)" + $(if ($s.Vat) { " (VAT No. $($s.Vat))" }) + ": $($sel.Lines.Count) item(s), $(Format-Money $sel.Total) excluding VAT - order $($sel.OrderNo)") -Indent 360 -After 60
+            $awardXml += New-WPara ("- $($s.Name)" + (Get-VatText $s) + ": $(Get-ItemCount $sel.Lines.Count), $(Format-Money $sel.Total) χωρίς ΦΠΑ – παραγγελία $($sel.OrderNo)") -Indent 360 -After 60
         }
-        $awardXml += New-WPara "Total awarded value: $(Format-Money $GrandTotal) excluding VAT." -Bold
-        $awardXml += New-WPara 'This decision takes effect upon signature by the authorising officer.' -Italic -Size 20
+        $awardXml += New-WPara "Συνολική αξία ανάθεσης: $(Format-Money $GrandTotal) χωρίς ΦΠΑ." -Bold
+        $awardXml += New-WPara 'Η παρούσα απόφαση τίθεται σε ισχύ με την υπογραφή της από τον εξουσιοδοτημένο λειτουργό.' -Italic -Size 20
     }
 
-    # Final order(s)
+    # 6. Final order(s), one per selected supplier
     $orderXml = ''
     foreach ($sKey in $Selected.Keys) {
         $s = $Suppliers[$sKey]; $sel = $Selected[$sKey]
-        $orderXml += New-WPara "ORDER No. $($sel.OrderNo) - $($s.Name)" -Bold -KeepNext
+        $orderXml += New-WPara "ΠΑΡΑΓΓΕΛΙΑ αρ. $($sel.OrderNo) – $($s.Name)" -Bold -KeepNext
         $contact = @()
-        if ($s.Vat) { $contact += "VAT No. $($s.Vat)" }
+        if ($s.Vat) { $contact += "Αρ. ΦΠΑ $($s.Vat)" }
         if ($s.Address) { $contact += $s.Address }
-        if ($s.Phone) { $contact += "Tel. $($s.Phone)" }
+        if ($s.Phone) { $contact += "Τηλ. $($s.Phone)" }
         if ($s.Email) { $contact += $s.Email }
         if ($contact.Count -gt 0) { $orderXml += New-WPara ($contact -join ' | ') -Size 20 }
-        $orderXml += New-WPara "Legal basis: Article $Article of $LawText. Reference: $(if ($isA) { $sel.AcceptNo } else { "$RequestId-AW" })." -Size 20
+        $orderXml += New-WPara "Νομική βάση: άρθρο $ArtEl του $LawEl. Αναφορά: $(if ($isA) { $sel.AcceptNo } else { "$RequestId-AW" })." -Size 20
         $rows = New-Object System.Collections.Generic.List[object]
         foreach ($m in $sel.Lines) {
-            $split = ($m.Split.Keys | ForEach-Object { "${_}: $(Format-Qty $m.Split[$_])" }) -join '; '
-            $rows.Add(@($m.Code, $m.Description, [string]$m.Unit, (Format-Qty $m.Quantity), $split, (Format-Price $m.UnitPrice), (Format-Money $m.LineTotal)))
+            $rows.Add(@($m.Code, $m.Description, [string]$m.Unit, (Format-Qty $m.Quantity), (Get-SplitText $m.Split), (Format-Price $m.UnitPrice), (Format-Money $m.LineTotal)))
         }
-        $rows.Add(@(@{ Text = 'TOTAL'; Bold = $true }, '', '', '', '', '', @{ Text = (Format-Money $sel.Total); Bold = $true }))
-        $orderXml += New-WTable @('Code', 'Description', 'Unit', 'Qty', 'Deliver to', 'Unit price', 'Total') $rows @(900, 2300, 700, 800, 1826, 1200, 1300) -Right @(3, 5, 6)
+        $rows.Add(@(@{ Text = 'ΣΥΝΟΛΟ'; Bold = $true }, '', '', '', '', '', @{ Text = (Format-Money $sel.Total); Bold = $true }))
+        $orderXml += New-WTable @('Κωδικός', 'Περιγραφή', 'Μονάδα', 'Ποσ.', 'Παράδοση', 'Τιμή μον.', 'Σύνολο') $rows @(900, 2200, 900, 700, 1826, 1200, 1300) -Right @(3, 5, 6)
     }
-    $orderXml += New-WPara ("Grand total: $(Format-Money $GrandTotal) excluding VAT. Prices exclude VAT. Deliver each quantity to the kitchen shown. " +
-        "Package $RequestId; machine-readable summary: unified_summary.json.") -Size 20
+    $orderXml += New-WPara ("Γενικό σύνολο: $(Format-Money $GrandTotal) χωρίς ΦΠΑ. Οι τιμές δεν περιλαμβάνουν ΦΠΑ. Κάθε ποσότητα παραδίδεται στην κουζίνα " +
+        "που αναγράφεται. Πακέτο $RequestId· ηλεκτρονική σύνοψη: unified_summary.json.") -Size 20
 
-    $kitchenNames = ($Kitchens | ForEach-Object { "$($_.kitchen) ($($_.hospital))" }) -join ', '
+    # Signatures
+    $sigXml = ''
+    foreach ($role in @('Ετοιμάστηκε από (Λειτουργός Προμηθειών)', 'Εγκρίθηκε από (Εξουσιοδοτημένος Λειτουργός)')) {
+        $sigXml += New-WPara $role -Bold -KeepNext -After 240
+        $sigXml += New-WPara 'Ονοματεπώνυμο: ________________________________' -KeepNext -After 240
+        $sigXml += New-WPara 'Υπογραφή: ______________________________________' -KeepNext -After 240
+        $sigXml += New-WPara 'Ημερομηνία: ____________________________________' -After 400
+    }
+    $sigXml += New-WPara "Αρ. πακέτου: $RequestId" -Italic -Size 18
+
+    $hospitalNames = ($Kitchens | ForEach-Object { $_.hospital } | Select-Object -Unique) -join ', '
     $supplierNames = ($Selected.Keys | ForEach-Object { $Suppliers[$_].Name }) -join ', '
     Write-DocxFromTemplate $TemplateFile $DocxOut `
-        @{ supplier_name = $supplierNames; date = $today; kitchen_name = $kitchenNames } `
-        @{ items_table = $itemsXml; price_comparison = $cmpXml; legal_basis = $legalXml; decision_text = $decisionXml
-           acceptance_or_award_text = $awardXml; final_order_text = $orderXml }
+        @{ supplier_name = $supplierNames; date = $today; kitchen_name = $hospitalNames; legal_basis = $legalBasis } `
+        @{ items_table = $itemsXml; price_comparison = $cmpXml; decision_text = $decisionXml
+           acceptance_or_award_text = $awardXml; final_order_text = $orderXml; signature_block = $sigXml }
     Write-Log "Written $(Get-RelPath $DocxOut)"
 
     $summary = [ordered]@{
