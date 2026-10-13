@@ -179,7 +179,8 @@ Install-WingetPackage -Id 'OpenJS.NodeJS.LTS'
 Update-SessionPath
 
 Write-Host 'Installing Python packages...'
-python -m pip install --upgrade requests openpyxl pandas
+# py launcher avoids the Microsoft Store "python" alias on fresh machines.
+py -3.12 -m pip install --upgrade requests openpyxl pandas
 if ($LASTEXITCODE -ne 0) { throw "pip install failed (exit code $LASTEXITCODE)." }
 
 $packageJson = Join-Path $env:PROJECT_ROOT 'package.json'
