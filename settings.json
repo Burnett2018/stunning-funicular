@@ -1,0 +1,5 @@
+{
+  "enableWorkflows": true,
+  "inputNeededNotifEnabled": true,
+  "agentPushNotifEnabled": true
+}
