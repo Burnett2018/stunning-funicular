@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "model": "claude-opus-5",
+  "permissions": {
+    "allow": [
+      "Read(data/*)",
+      "Read(templates/*)",
+      "Read(scripts/*)",
+      "Bash(powershell.exe -File scripts/Ultra-Procurement.ps1)"
+    ],
+    "deny": [
+      "Read(/)",
+      "Write(/)"
+    ]
+  },
+  "env": {
+    "PROCUREMENT_SYSTEM": "UNIFIED",
+    "LEGAL_FRAMEWORK": "ARTICLE_90"
+  }
+}
