@@ -1,0 +1,5 @@
+{
+  "_note": "Thresholds in EUR excluding VAT. threshold_90_1_a_eur (5000) comes from the draft script; confirm it against Law 73(I)/2016 as amended by Law 113(I)/2025 and internal rules before use. Set threshold_90_1_b_max_eur to stop runs above the Article 90(1)(b) limit, or leave null.",
+  "threshold_90_1_a_eur": 5000,
+  "threshold_90_1_b_max_eur": null
+}
