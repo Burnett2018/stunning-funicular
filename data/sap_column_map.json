@@ -1,0 +1,20 @@
+{
+  "_note": "Ονόματα στηλών των εξαγωγών SAP που αναγνωρίζει το scripts/Merge-SapContracts.ps1. Αν μια αναφορά (π.χ. ZCONTRACTS_REPORT, Z_VENDOR_MATERIAL) ονομάζει αλλιώς μια στήλη, προσθέστε το όνομα όπως εμφανίζεται στο Excel στη σωστή λίστα. Κεφαλαία/πεζά, κενά, σημεία στίξης και τόνοι αγνοούνται. Ένα όνομα επιτρέπεται σε μία μόνο λίστα. Μέσα σε κάθε λίστα, αν το αρχείο έχει δύο από τα ονόματα, χρησιμοποιείται αυτό που είναι πρώτο στη λίστα.",
+  "contract": ["Purchasing Document", "Purch.Doc.", "Purchasing Doc.", "Outline Agreement", "Contract", "Contract Number", "Agreement", "Αρ. SAP", "Αριθμός SAP", "Αρ. Σύμβασης", "Αριθμός Σύμβασης", "Σύμβαση"],
+  "item": ["Item", "Itm", "Contract Item", "Item Number", "Item No", "Θέση", "Αρ. Θέσης", "Αριθμός Θέσης"],
+  "supplier": ["Supplier", "Vendor", "Supplier Code", "Vendor Code", "Supplier Number", "Vendor Number", "Supplier/Supplying Plant", "Vendor/Supplying Plant", "Κωδ. Προμηθευτή", "Κωδικός Προμηθευτή", "Αρ. Προμηθευτή"],
+  "supplier_name": ["Supplier Name", "Vendor Name", "Name of Supplier", "Name of Vendor", "Name 1", "Επωνυμία", "Επωνυμία Προμηθευτή", "Όνομα Προμηθευτή"],
+  "material": ["Material", "Material Number", "Material No", "Υλικό", "Κωδ. Υλικού", "Κωδικός Υλικού"],
+  "description": ["Short Text", "Material Description", "Description", "Σύντομο Κείμενο", "Περιγραφή", "Περιγραφή Υλικού"],
+  "supplier_material": ["Supplier Material Number", "Vendor Material Number", "Supplier Mat. No.", "Vendor Mat. No.", "Supplier Material", "Vendor Material", "Κωδ. Είδους Προμηθευτή", "Κωδικός Είδους Προμηθευτή", "Κωδ. Υλικού Προμηθευτή"],
+  "net_price": ["Net Price", "Net Order Price", "Καθαρή Τιμή", "Τιμή Σύμβασης"],
+  "price_unit": ["Per", "Price Unit", "Ανά", "Μονάδα Τιμής"],
+  "currency": ["Currency", "Crcy", "Νόμισμα"],
+  "order_unit": ["Order Unit", "OUn", "Unit of Measure", "UoM", "Unit", "Μονάδα Παραγγελίας", "Μονάδα Μέτρησης", "Μονάδα"],
+  "order_price_unit": ["Order Price Unit", "OPU", "Μονάδα Τιμής Παραγγελίας"],
+  "valid_from": ["Validity Per. Start", "Validity Period Start", "Start of Validity Period", "Valid From", "Έναρξη Ισχύος", "Ισχύει Από"],
+  "valid_to": ["Validity Period End", "Validity Per. End", "End of Validity Period", "Valid To", "Valid Until", "Λήξη Ισχύος", "Ισχύει Έως", "Λήξη"],
+  "deletion_indicator": ["Deletion Indicator", "Deletion Ind.", "Del. Indicator", "D", "Ένδειξη Διαγραφής"],
+  "manufacturer": ["Manufacturer", "Manufacturer Name", "Mfr", "Brand", "Κατασκευαστής", "Μάρκα"],
+  "manufacturer_part": ["Manufacturer Part Number", "Manufacturer Part No.", "MPN", "Κωδ. Κατασκευαστή", "Κωδικός Κατασκευαστή"]
+}
